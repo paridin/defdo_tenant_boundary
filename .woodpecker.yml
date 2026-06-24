@@ -1,0 +1,176 @@
+# ─── defdo_tenant_boundary Woodpecker CI/CD ───────────────────────────────────
+#
+# Events:
+#   push / pull_request → format check, compile, test
+#   tag (semver)        → validate + publish to Hex.pm
+#   manual              → CI run or publish
+#   cron                → nightly CI
+#
+# Secrets (configure in Woodpecker):
+#   hex_api_key       — Hex.pm API write key (not available on pull_request)
+#   hex_org_name      — Hex organization name ("defdo")
+#   hex_org_token     — Hex organization read token
+
+when:
+  - event: [push, pull_request]
+    branch: main
+  - event: tag
+  - event: manual
+  - event: cron
+
+steps:
+  # ═══════════════════════════════════════════════════════════════════════
+  #  CI
+  # ═══════════════════════════════════════════════════════════════════════
+
+  - name: format-and-compile
+    image: elixir:1.19.5
+    when:
+      event: [push, pull_request, cron]
+    commands:
+      - mix do local.hex --force, local.rebar --force
+      - mix deps.get
+      - mix format --check-formatted
+      - mix compile --warnings-as-errors
+
+  - name: test
+    image: elixir:1.19.5
+    when:
+      event: [push, pull_request, cron]
+    commands:
+      - mix do local.hex --force, local.rebar --force
+      - mix deps.get
+      - mix compile --warnings-as-errors
+      - mix test
+
+  # ═══════════════════════════════════════════════════════════════════════
+  #  RELEASE — tag events
+  # ═══════════════════════════════════════════════════════════════════════
+
+  - name: release-validate
+    image: elixir:1.19.5
+    when:
+      event: tag
+    environment:
+      HEX_ORG_NAME:
+        from_secret: hex_org_name
+      HEX_ORG_TOKEN:
+        from_secret: hex_org_token
+    commands:
+      - mix do local.hex --force, local.rebar --force
+      - |
+        if [ -n "$$HEX_ORG_NAME" ] && [ -n "$$HEX_ORG_TOKEN" ]; then
+          mix hex.organization auth "$$HEX_ORG_NAME" --key "$$HEX_ORG_TOKEN"
+        fi
+      - mix deps.get
+      - mix format --check-formatted
+      - mix compile --warnings-as-errors
+      - mix test
+      - MIX_ENV=dev mix deps.get
+      - MIX_ENV=dev mix hex.build
+
+  - name: hex-publish
+    image: elixir:1.19.5
+    when:
+      event: tag
+    depends_on: [release-validate]
+    environment:
+      HEX_API_KEY:
+        from_secret: hex_api_key
+      HEX_ORG_NAME:
+        from_secret: hex_org_name
+      HEX_ORG_TOKEN:
+        from_secret: hex_org_token
+    commands:
+      - mix do local.hex --force, local.rebar --force
+      - |
+        if [ -n "$$HEX_ORG_NAME" ] && [ -n "$$HEX_ORG_TOKEN" ]; then
+          mix hex.organization auth "$$HEX_ORG_NAME" --key "$$HEX_ORG_TOKEN"
+        fi
+      - mix deps.get
+      - mix test
+      - |
+        if [ -z "$$HEX_API_KEY" ]; then
+          echo "ERROR: HEX_API_KEY is required to publish"
+          exit 1
+        fi
+      - mix hex.publish --yes
+
+  # ═══════════════════════════════════════════════════════════════════════
+  #  MANUAL
+  # ═══════════════════════════════════════════════════════════════════════
+
+  - name: manual-ci
+    image: elixir:1.19.5
+    when:
+      event: manual
+      evaluate: 'CI_PIPELINE_TRIGGER_MESSAGE != "publish"'
+    commands:
+      - mix do local.hex --force, local.rebar --force
+      - mix deps.get
+      - mix format --check-formatted
+      - mix compile --warnings-as-errors
+      - mix test
+
+  - name: manual-publish
+    image: elixir:1.19.5
+    when:
+      event: manual
+      evaluate: 'CI_PIPELINE_TRIGGER_MESSAGE == "publish"'
+    environment:
+      HEX_API_KEY:
+        from_secret: hex_api_key
+      HEX_ORG_NAME:
+        from_secret: hex_org_name
+      HEX_ORG_TOKEN:
+        from_secret: hex_org_token
+    commands:
+      - mix do local.hex --force, local.rebar --force
+      - |
+        if [ -n "$$HEX_ORG_NAME" ] && [ -n "$$HEX_ORG_TOKEN" ]; then
+          mix hex.organization auth "$$HEX_ORG_NAME" --key "$$HEX_ORG_TOKEN"
+        fi
+      - mix deps.get
+      - mix format --check-formatted
+      - mix compile --warnings-as-errors
+      - mix test
+      - MIX_ENV=dev mix hex.build
+      - |
+        if [ -z "$$HEX_API_KEY" ]; then
+          echo "ERROR: HEX_API_KEY is required to publish"
+          exit 1
+        fi
+      - mix hex.publish --yes
+
+  # ═══════════════════════════════════════════════════════════════════════
+  #  DEPLOY — woodpecker-cli deploy
+  # ═══════════════════════════════════════════════════════════════════════
+
+  - name: deploy-publish
+    image: elixir:1.19.5
+    when:
+      event: deployment
+    environment:
+      HEX_API_KEY:
+        from_secret: hex_api_key
+      HEX_ORG_NAME:
+        from_secret: hex_org_name
+      HEX_ORG_TOKEN:
+        from_secret: hex_org_token
+    commands:
+      - mix do local.hex --force, local.rebar --force
+      - |
+        if [ -n "$$HEX_ORG_NAME" ] && [ -n "$$HEX_ORG_TOKEN" ]; then
+          mix hex.organization auth "$$HEX_ORG_NAME" --key "$$HEX_ORG_TOKEN"
+        fi
+      - mix deps.get
+      - mix format --check-formatted
+      - mix compile --warnings-as-errors
+      - mix test
+      - MIX_ENV=dev mix hex.build
+      - |
+        if [ -z "$$HEX_API_KEY" ]; then
+          echo "ERROR: HEX_API_KEY is required to publish"
+          exit 1
+        fi
+      - mix hex.publish --yes
