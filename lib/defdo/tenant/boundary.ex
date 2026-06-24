@@ -16,12 +16,9 @@ defmodule Defdo.Tenant.Boundary do
     * `Defdo.Tenant.Worker` — tenant-safe worker behaviour (restores context before callback)
     * `Defdo.Tenant.GenServer` — capture/restore helpers for GenServer callbacks
     * `Defdo.Tenant.PubSub` — tenant-aware PubSub envelope (broadcast, subscribe, handle)
-
-  ## Coming next
-
     * `Defdo.Tenant.Webhook` — two-phase trusted-edge → tenant-runtime
-    * `Defdo.Tenant.Cache` — tenant-aware cache key builders
-    * `Defdo.Tenant.Storage` — tenant-aware object storage path builders
+    * `Defdo.Tenant.Cache` — tenant-scoped cache key builder
+    * `Defdo.Tenant.Storage` — tenant-scoped object storage path builder
 
   ## Enforcement modes
 

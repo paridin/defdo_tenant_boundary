@@ -1,7 +1,7 @@
 defmodule Defdo.Tenant.Boundary.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version File.read!("VERSION") |> String.trim()
   @organization "defdo"
   @source_url "https://github.com/defdo-dev/defdo_tenant_boundary"
 
