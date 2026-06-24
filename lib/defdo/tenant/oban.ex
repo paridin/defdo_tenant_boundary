@@ -1,26 +1,59 @@
 defmodule Defdo.Tenant.Oban do
   @moduledoc """
-  Tenant-safe Oban job insertion — part of the Tenant Boundary Kit.
+  Tenant-safe Oban job insertion.
 
-  Oban jobs run in **separate processes** and do not inherit the caller's tenant
-  context. This module captures the current `Defdo.Tenant.Context` and serializes
-  it into the job's `meta` map so `Defdo.Tenant.Worker` can restore it before
-  `perform/1` runs.
+  Part of the [Tenant Boundary Platform Kit](https://github.com/defdo-dev/defdo_tenant/blob/main/docs/tenant-boundary-kit.md).
+
+  ## Problem
+
+  Oban jobs execute in **separate BEAM processes**. The caller's
+  `Defdo.Tenant.Context` — stored in the process dictionary — is not inherited.
+  Without explicit handling, a job runs without tenant scope and
+  `Defdo.Tenant.Repo.Protection` rejects every query.
+
+  ## Solution
+
+  `Defdo.Tenant.Oban` captures the current `Defdo.Tenant.Context` and serializes
+  it into the job's `meta` map (key `"defdo_tenant_context"`). On execution,
+  `Defdo.Tenant.Worker` restores it before the business callback.
 
   ## Usage
 
-      # Build a changeset (like Oban.Job.new/2):
+      # Build a changeset (same API as Oban.Job.new/2):
       changeset = Defdo.Tenant.Oban.new(%{user_id: 42}, worker: MyWorker)
 
-      # Insert a job directly:
+      # Insert a job with context auto-attached:
       {:ok, job} = Defdo.Tenant.Oban.insert(MyWorker, %{user_id: 42})
+
+      # Insert with custom options:
       {:ok, job} = Defdo.Tenant.Oban.insert(MyWorker, %{user_id: 42}, queue: :critical)
+
+      # Attach context to an existing job/changeset:
+      changeset = Defdo.Tenant.Oban.attach_tenant(existing_changeset)
+
+  ## Enforcement modes
+
+  Respects `Defdo.Tenant.Config` enforcement:
+
+  | Mode | Missing-context behaviour |
+  |---|---|
+  | `:observe` (default) | Emit `[:defdo, :tenant, :oban, :context_missing]` telemetry |
+  | `:warn` | Telemetry + log warning |
+  | `:test_enforce` | Raise if no context (test/CI only) |
+  | `:strict` | Raise if no context |
 
   ## Telemetry
 
-  Emits `[:defdo, :tenant, :oban, :context_captured]` when context is attached,
-  and `[:defdo, :tenant, :oban, :context_missing]` when absent.
-  Enforcement mirrors `Defdo.Tenant.Config` (observe/warn/raise).
+  | Event | Metadata |
+  |---|---|
+  | `[:defdo, :tenant, :oban, :context_captured]` | `worker`, `scope` |
+  | `[:defdo, :tenant, :oban, :context_missing]` | `worker` |
+
+  ## See also
+
+  * `Defdo.Tenant.Worker` — restores context before job execution
+  * `Defdo.Tenant.Config` — enforcement modes
+  * `Defdo.Tenant.Boundary.Task` — same pattern for `Task.async`
   """
 
   alias Defdo.Tenant.Config
