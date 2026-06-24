@@ -172,65 +172,68 @@ defmodule Defdo.Tenant.Webhook do
   end
 
   defp resolve_tenant(repo, resolver, trusted_data) do
-    result =
-      case resolver do
-        :host ->
-          ensure_repo!(repo)
-          resolve_by_host(repo, trusted_data)
-
-        :domain ->
-          ensure_repo!(repo)
-          resolve_by_domain(repo, trusted_data)
-
-        {module, function, args} when is_atom(module) and is_atom(function) and is_list(args) ->
-          apply(module, function, [trusted_data | args])
-
-        nil ->
-          nil
-
-        _ ->
-          raise ArgumentError,
-                "unknown webhook resolver #{inspect(resolver)}. " <>
-                  "Valid resolvers: :host, :domain, or {Module, :function, [args]}"
-      end
-
-    case result do
-      %Profile{} = profile ->
-        :telemetry.execute(
-          [:defdo, :tenant, :webhook, :resolved],
-          %{count: 1},
-          %{resolver: resolver, tenant_id: profile.tenant_id}
-        )
-
-        {:ok, profile}
-
-      nil ->
-        :telemetry.execute(
-          [:defdo, :tenant, :webhook, :unresolved],
-          %{count: 1},
-          %{resolver: resolver}
-        )
-
-        cond do
-          Config.raising?() ->
-            raise ArgumentError,
-                  "Defdo.Tenant.Webhook: unable to resolve tenant using resolver #{inspect(resolver)}"
-
-          Config.warning?() ->
-            Logger.warning(
-              "Defdo.Tenant.Webhook: unable to resolve tenant using resolver #{inspect(resolver)}"
-            )
-
-          true ->
-            :ok
-        end
-
-        {:error, :unresolved}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    result = run_resolver(repo, resolver, trusted_data)
+    handle_resolution(result, resolver)
   end
+
+  defp run_resolver(repo, :host, trusted_data) do
+    ensure_repo!(repo)
+    resolve_by_host(repo, trusted_data)
+  end
+
+  defp run_resolver(repo, :domain, trusted_data) do
+    ensure_repo!(repo)
+    resolve_by_domain(repo, trusted_data)
+  end
+
+  defp run_resolver(_repo, {module, function, args}, trusted_data)
+       when is_atom(module) and is_atom(function) and is_list(args) do
+    apply(module, function, [trusted_data | args])
+  end
+
+  defp run_resolver(_repo, nil, _trusted_data), do: nil
+
+  defp run_resolver(_repo, resolver, _trusted_data) do
+    raise ArgumentError,
+          "unknown webhook resolver #{inspect(resolver)}. " <>
+            "Valid resolvers: :host, :domain, or {Module, :function, [args]}"
+  end
+
+  defp handle_resolution(%Profile{} = profile, resolver) do
+    :telemetry.execute(
+      [:defdo, :tenant, :webhook, :resolved],
+      %{count: 1},
+      %{resolver: resolver, tenant_id: profile.tenant_id}
+    )
+
+    {:ok, profile}
+  end
+
+  defp handle_resolution(nil, resolver) do
+    :telemetry.execute(
+      [:defdo, :tenant, :webhook, :unresolved],
+      %{count: 1},
+      %{resolver: resolver}
+    )
+
+    cond do
+      Config.raising?() ->
+        raise ArgumentError,
+              "Defdo.Tenant.Webhook: unable to resolve tenant using resolver #{inspect(resolver)}"
+
+      Config.warning?() ->
+        Logger.warning(
+          "Defdo.Tenant.Webhook: unable to resolve tenant using resolver #{inspect(resolver)}"
+        )
+
+      true ->
+        :ok
+    end
+
+    {:error, :unresolved}
+  end
+
+  defp handle_resolution({:error, reason}, _resolver), do: {:error, reason}
 
   # ── Built-in resolvers ────────────────────────────────────────────────────────
 
@@ -245,9 +248,7 @@ defmodule Defdo.Tenant.Webhook do
             fragment("? = ANY(?)", ^normalized, p.allowed_domains) or
             p.free_fqdn == ^normalized
       )
-      |> repo.one(
-        skip_tenant_id: [reason: "webhook: trusted-edge tenant resolution by host"]
-      )
+      |> repo.one(skip_tenant_id: [reason: "webhook: trusted-edge tenant resolution by host"])
 
     profile
   end
@@ -262,9 +263,7 @@ defmodule Defdo.Tenant.Webhook do
         where: p.is_active == true,
         where: p.domain == ^normalized
       )
-      |> repo.one(
-        skip_tenant_id: [reason: "webhook: trusted-edge tenant resolution by domain"]
-      )
+      |> repo.one(skip_tenant_id: [reason: "webhook: trusted-edge tenant resolution by domain"])
 
     profile
   end

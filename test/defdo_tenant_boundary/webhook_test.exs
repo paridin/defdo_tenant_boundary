@@ -19,10 +19,11 @@ defmodule DefdoTenantBoundary.WebhookTest do
 
   describe "resolve/2 with custom resolver" do
     test "resolves tenant using custom MFA" do
-      result = Webhook.resolve(
-        %{client_id: "known-client"},
-        resolver: {TestResolver, :by_client_id, []}
-      )
+      result =
+        Webhook.resolve(
+          %{client_id: "known-client"},
+          resolver: {TestResolver, :by_client_id, []}
+        )
 
       assert {:ok, profile} = result
       assert profile.tenant_id == "tenant-resolved-456"
@@ -34,10 +35,11 @@ defmodule DefdoTenantBoundary.WebhookTest do
       try do
         Application.put_env(:defdo_tenant, :enforcement, :observe)
 
-        result = Webhook.resolve(
-          %{client_id: "unknown"},
-          resolver: {TestResolver, :by_client_id, []}
-        )
+        result =
+          Webhook.resolve(
+            %{client_id: "unknown"},
+            resolver: {TestResolver, :by_client_id, []}
+          )
 
         assert {:error, :unresolved} = result
       after

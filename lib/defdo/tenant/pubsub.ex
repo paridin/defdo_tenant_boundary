@@ -156,6 +156,7 @@ defmodule Defdo.Tenant.PubSub do
 
           Config.warning?() ->
             require Logger
+
             Logger.warning(
               "Defdo.Tenant.PubSub broadcast of #{inspect(event_str)} has no tenant context"
             )

@@ -111,6 +111,7 @@ defmodule Defdo.Tenant.Storage do
 
       Config.warning?() ->
         require Logger
+
         Logger.warning(
           "Defdo.Tenant.Storage.path/1 called without tenant context — prefixing with global/"
         )
